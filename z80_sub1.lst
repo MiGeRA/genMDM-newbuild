@@ -1,0 +1,25 @@
+00000000 af                               xor a
+00000001 01 d9 1f                         ld bc,0x1fd9
+00000004 11 27 00                         ld de,0x0027
+00000007 21 26 00                         ld hl,0x0026
+0000000a f9                               ld sp,hl
+0000000b 77                               ld (hl),a
+0000000c ed b0                            ldir
+0000000e dd e1                            pop ix
+00000010 fd e1                            pop iy
+00000012 ed 47                            ld i,a
+00000014 ed 4f                            ld r,a
+00000016 d1                               pop de
+00000017 e1                               pop hl
+00000018 f1                               pop af
+00000019 08                               ex af,af'
+0000001a d9                               exx
+0000001b c1                               pop bc
+0000001c d1                               pop de
+0000001d e1                               pop hl
+0000001e f1                               pop af
+0000001f f9                               ld sp,hl
+00000020 f3                               di
+00000021 ed 56                            im 1
+00000023 36 e9                            ld (hl),0xe9
+00000025 e9                               jp (hl)
