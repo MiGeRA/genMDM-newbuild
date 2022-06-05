@@ -172,55 +172,70 @@ loc_07:
 ;*************************************** Prepare to read port 68k (BUS REQ)
 Hot_Start:
 	MOVE.w	#$0100, $00A11100
-	MOVE.b	#0, $00A1000D		; $00A1000B - Port2, $00A1000D - Port3
+	MOVE.b	#0, $00A1000D		;$00A1000B - Port2, $00A1000D - Port3
 	MOVE.b	#0, D6
 ;*************************************** Init YM2612
 	LEA	YM_Data_Set, A0
 	MOVE.l	#$0000002A, D7		
 loc_08:
-	MOVE.b	(A0)+, D0
-	MOVE.b	(A0)+, D1
+	MOVE.b	(A0)+, D0		;"YM-A0"
+	MOVE.b	(A0)+, D1		;"YM-D0"
 	BSR.w	YM_Load_P1
 	DBF	D7, loc_08
+;*************************************** What do we expect to read?
+;
+; z0xx xxxx - nop
+; z100 xxxx - low half-byte of data (lD)
+; z101 xxxx - hi half-byte of data (hD)
+; z110 xxxx - low half-byte of addr (lA)
+; z111 xxxx - hi half-byte of addr (hA) and goto next
+;
 ;*************************************** Read port 68k
 loc_09:
-	MOVE.b	$00A10007, D0		; $00A10005 - Port2, $00A10007 - Port3
+	MOVE.b	$00A10007, D0		;$00A10005 - Port2, $00A10007 - Port3
 	BTST.l	#6, D0
-	BNE.w	loc_10
-	BRA.w	loc_09
+	BNE.w	loc_10                  ;goto if D0[6] == 1 (always = 1, becouse pin not use)
+	BRA.w	loc_09			;Come back ...
 loc_10:
 	BTST.l	#5, D0
-	BNE.w	loc_12
+	BNE.w	loc_12			;goto if D0[5] == 1
 	BTST.l	#4, D0	
-	BNE.w	loc_11
-	MOVE.b	D0, D2	
-	ANDI.b	#$0F, D2
-	BRA.w	loc_09
+	BNE.w	loc_11                  ;goto if D0[4] == 1
+;*************************************** We are here because D0[5] == 0, D0[4] == 0
+	MOVE.b	D0, D2			
+	ANDI.b	#$0F, D2		;D0[3-0] -> D2[3-0] (lD)
+	BRA.w	loc_09			;Come back ...
+;*************************************** We are here because D0[5] == 0, D0[4] == 1
 loc_11:
 	MOVE.b	D0, D3	
 	ANDI.b	#$0F, D3
-	LSL.b	#4, D3	
-	BRA.w	loc_09
+	LSL.b	#4, D3			;D0[3-0] -> D3[7-4] (hD)
+	BRA.w	loc_09			;Come back ...
+;*************************************** We are here because D0[5] == 1 for addr receiving
 loc_12:
 	BTST.l	#4, D0
-	BNE.w	loc_13
+	BNE.w	loc_13                  ;goto if D0[4] == 1 (hA) recieved
+;*************************************** We are here because D0[5] == 1, D0[4] == 0
 	MOVE.b	D0, D4	
-	ANDI.b	#$0F, D4
-	BRA.w	loc_09
-loc_13:
-	ANDI.b	#$0F, D0
+	ANDI.b	#$0F, D4                ;D0[3-0] -> D4[3-0] (lA)
+	BRA.w	loc_09			;Come back ...
+;*************************************** We are here because D0[5] == 1, D0[4] == 1
+loc_13:					
+	ANDI.b	#$0F, D0		;D0[3-0] (hA) recieved and parse next
 	CMPI.b	#$0B, D0
-	BHI.w	loc_14
-	MOVE.b	D0, D5
-	LSL.b	#4, D5
-	OR.b	D2, D3
-	OR.b	D4, D5
-	MOVE.b	D5, D0
-	MOVE.b	D3, D1
+	BHI.w	loc_14			;goto if D0 > 0x0B (D0[5],D0[4] == 1) - addr over YM
+	MOVE.b	D0, D5			
+	LSL.b	#4, D5                  ;D0[3-0] -> D5[7-4] (hA)
+	OR.b	D2, D3			;D2 | D3 -> D3 ("YM-Dx") - receive with D0[5] stays zero and changing D0[4]
+	OR.b	D4, D5			;D4 | D5 -> D5 ("YM-Ax") - receive with D0[5] stays one and changing D0[4]
+	MOVE.b	D5, D0                  ;D5 ->  D0 ("YM-Ax")
+	MOVE.b	D3, D1                  ;D3 ->  D1 ("YM-Dx")
+;*************************************** Checking current select Bank
 	BTST.l	#0, D6
-	BNE.w	YM_Load_P2
-	BSR.w	YM_Load_P1
+	BNE.w	YM_Load_P2		;goto if D6[0] == 1, and next to loc_09
+	BSR.w	YM_Load_P1              ;call if D6[0] == 0
 	BRA.w	loc_09
+;*************************************** "notYM-Ax" == 0xC0 | 0xD0 | 0xE0
 loc_14:
 	CMPI.w	#$000C, D0
 	BEQ.w	loc_15
@@ -228,23 +243,26 @@ loc_14:
 	BEQ.w	loc_16
 	CMPI.w	#$000E, D0
 	BEQ.w	loc_17
-	BRA.w	loc_09
+	BRA.w	loc_09			;Come back ...
+;*************************************** We are here because "notYM-Ax" == 0xCx (low part of addr - any)
 loc_15:
-	OR.b	D2, D3		
-	MOVE.b	D3, $00C00011	
-	BRA.w	loc_09
+	OR.b	D2, D3			;D2 | D3 -> D3 ("notYM-Dx") - receive with D0[5] stays zero and changing D0[4]
+	MOVE.b	D3, $00C00011		;PSG Write
+	BRA.w	loc_09			;Come back ...
+;*************************************** We are here because "notYM-Ax" == 0xDx (low part of addr - any)
 loc_16:
-	MOVE.b	#0, D6		
-	BRA.w	loc_09
-loc_17:
-	MOVE.b	#1, D6		
-	BRA.w	loc_09
+	MOVE.b	#0, D6			;Pre-select Bank P1 (inside logic for select subroutine)
+	BRA.w	loc_09			;Come back ...
+;*************************************** We are here because "notYM-Ax" == 0xEx (low part of addr - any)
+loc_17:					
+	MOVE.b	#1, D6			;Pre-select Bank P2 (inside logic for select subroutine)
+	BRA.w	loc_09			;Come back ...
 ;*************************************** YM2612 Registry-Bank 1 loading ...
 YM_Load_P1:
 	MOVE.b	$00A04000, D2
 	BTST.l	#7, D2
 	BNE.b	YM_Load_P1
-	MOVE.b	D0, $00A04000
+	MOVE.b	D0, $00A04000		;"YM-A0"
 	NOP
 	NOP
 	NOP
@@ -252,14 +270,14 @@ loc_18:
 	MOVE.b	$00A04000, D2
 	BTST.l	#7, D2
 	BNE.b	loc_18
-	MOVE.b	D1, $00A04001
+	MOVE.b	D1, $00A04001		;"YM-D0"
 	RTS
 ;*************************************** YM2612 Registry-Bank 2 loading ...
 YM_Load_P2:
 	MOVE.b	$00A04000, D2	
 	BTST.l	#7, D2		
 	BNE.b	YM_Load_P2
-	MOVE.b	D0, $00A04002	
+	MOVE.b	D0, $00A04002		;"YM-A1"
 	NOP			
 	NOP			
 	NOP			
@@ -267,7 +285,7 @@ loc_19:
 	MOVE.b	$00A04000, D2	
 	BTST.l	#7, D2		
 	BNE.b	loc_19
-	MOVE.b	D1, $00A04003	
+	MOVE.b	D1, $00A04003		;"YM-D1"
 	BRA.w	loc_09
 ;*************************************** Interrupt 68k
 Interrupt:
@@ -302,11 +320,50 @@ VDP_init:
 	dc.w	$9500	;DMA stuff (off)
 	dc.w	$9600	;DMA stuff (off)
 	dc.w	$9780	;DMA stuff (off)
-;*************************************** YM2612 Init sequence
+;*************************************** YM2612 Init sequence (YM-A0, YM-D0)
 YM_Data_Set:
-	dc.b	$22, $00, $27, $00, $28, $00, $28, $01, $28, $02, $28, $04, $28, $05, $28, $06, $2B, $00, $30, $71, $34, $0D, $38, $33, $3C, $01, $40, $23, $44, $2D, $48, $26 ;0x00
-	dc.b	$4C, $00, $50, $5F, $54, $99, $58, $5F, $5C, $94, $60, $05, $64, $05, $68, $05, $6C, $07, $70, $02, $74, $02, $78, $02, $7C, $02, $80, $11, $84, $11, $88, $11 ;0x20
-	dc.b	$8C, $A6, $90, $00, $94, $00, $98, $00, $9C, $00, $B0, $32, $B4, $C0, $A4, $22, $A0, $68, $28, $F0 ;0x40
+	dc.b	$22, $00 
+	dc.b	$27, $00
+	dc.b	$28, $00 
+	dc.b	$28, $01 
+	dc.b	$28, $02 
+	dc.b	$28, $04 
+	dc.b	$28, $05 
+	dc.b	$28, $06 
+	dc.b	$2B, $00
+	dc.b	$30, $71
+	dc.b	$34, $0D
+	dc.b	$38, $33
+	dc.b	$3C, $01
+	dc.b	$40, $23
+	dc.b	$44, $2D
+	dc.b	$48, $26
+	dc.b	$4C, $00
+	dc.b	$50, $5F
+	dc.b	$54, $99
+	dc.b	$58, $5F
+	dc.b	$5C, $94
+	dc.b	$60, $05
+	dc.b	$64, $05
+	dc.b	$68, $05
+	dc.b	$6C, $07
+	dc.b	$70, $02
+	dc.b	$74, $02
+	dc.b	$78, $02
+	dc.b	$7C, $02
+	dc.b	$80, $11
+	dc.b	$84, $11
+	dc.b	$88, $11
+	dc.b	$8C, $A6
+	dc.b	$90, $00
+	dc.b	$94, $00
+	dc.b	$98, $00
+	dc.b	$9C, $00
+	dc.b	$B0, $32
+	dc.b	$B4, $C0
+	dc.b	$A4, $22
+	dc.b	$A0, $68
+	dc.b	$28, $F0
 ;*************************************** Z80 Subroutine
 z80_sub1:
 	dc.b	$AF, $01, $D9, $1F, $11, $27, $00, $21, $26, $00, $F9, $77, $ED, $B0, $DD, $E1, $FD, $E1, $ED, $47, $ED, $4F, $D1, $E1, $F1, $08, $D9, $C1, $D1, $E1, $F1, $F9 ;0x00
