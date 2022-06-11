@@ -81,8 +81,8 @@ ROM_Start:
 
 	dc.b "SEGA MEGA DRIVE "                                 ; Console name
 	dc.b "GPL 2022.MAY    "                                 ; Copyright holder and release date
-	dc.b "genMDM newbuild for Ext-Port                    " ; Domestic name
-	dc.b "genMDM newbuild for Ext-Port                    " ; International name
+	dc.b "genMDM newbuild for Joy2-Port                   " ; Domestic name
+	dc.b "genMDM newbuild for Joy2-Port                   " ; International name
 	dc.b "AL 15526278-11"                                   ; Version number
 	dc.w 0xCFD4                                             ; Checksum
 	dc.b "F               "                                 ; I/O support
